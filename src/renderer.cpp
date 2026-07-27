@@ -542,7 +542,7 @@ void drawInventoryScreen(const Player& p, const World& w, const TextureAtlas& at
 void drawPausedOverlay() {
     int sw = GetScreenWidth(), sh = GetScreenHeight();
     DrawRectangle(0, 0, sw, sh, Fade(BLACK, 0.55f));
-    const char* msg = "已暂停 (按 ESC 继续)";
+    const char* msg = "已暂停 (按 P 继续)";
     int tw = measCN(msg, 40);
     drawCN(msg, (sw - tw) / 2, sh / 2 - 20, 40, WHITE);
 }

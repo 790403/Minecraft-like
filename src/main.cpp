@@ -99,7 +99,7 @@ int main() {
 
         // ====== 暂停 ======
 	        if (state == GameState::PAUSED) {
-	            if (IsKeyPressed(KEY_ESCAPE)) { state = GameState::PLAYING; DisableCursor(); }
+	            if (IsKeyPressed(KEY_P)) { state = GameState::PLAYING; DisableCursor(); }
 	            BeginDrawing(); ClearBackground(BLACK); drawSky(gt, player.camera);
 	            BeginMode3D(player.camera); worldDraw(world); EndMode3D();
 	            drawCrosshair(); drawHUD(player, world, gt, showDebug, world.atlas);
