@@ -27,7 +27,7 @@ void drawBlockHighlight(const RaycastHit& hit);
 void drawCrosshair();
 void drawHUD(const Player& p, const World& w, const GameTime& gt, bool showDebug, const TextureAtlas& atlas);
 void drawInventoryScreen(const Player& p, const World& w, const TextureAtlas& atlas);
-void drawPausedOverlay();
+int drawPausedOverlay();  // 返回 0=无操作 1=继续 2=退出
 int drawTitleScreen(const GameTime& gt, bool checkClick);
 void drawOldStartHint();
 void drawChestScreen(const Player& p, const World& w, const ChestGUI& gui, const TextureAtlas& atlas);

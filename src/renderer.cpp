@@ -539,12 +539,40 @@ void drawInventoryScreen(const Player& p, const World& w, const TextureAtlas& at
 }
 
 // ---- 暂停遮罩 ----
-void drawPausedOverlay() {
+int drawPausedOverlay() {
     int sw = GetScreenWidth(), sh = GetScreenHeight();
     DrawRectangle(0, 0, sw, sh, Fade(BLACK, 0.55f));
-    const char* msg = "已暂停 (按 P 继续)";
-    int tw = measCN(msg, 40);
-    drawCN(msg, (sw - tw) / 2, sh / 2 - 20, 40, WHITE);
+
+    // 标题
+    const char* title = "已暂停";
+    int tw = measCN(title, 40);
+    drawCN(title, (sw - tw) / 2, sh / 2 - 70, 40, WHITE);
+
+    // 按钮尺寸
+    int bw = 160, bh = 44, gap = 20;
+    int bx = sw / 2 - bw / 2, by = sh / 2 - 10;
+    Vector2 mouse = GetMousePosition();
+
+    int result = 0;
+
+    // 继续按钮
+    bool hover1 = CheckCollisionPointRec(mouse, { (float)bx, (float)by, (float)bw, (float)bh });
+    DrawRectangle(bx, by, bw, bh, hover1 ? Fade(GREEN, 0.6f) : Fade(WHITE, 0.15f));
+    DrawRectangleLines(bx, by, bw, bh, Fade(WHITE, 0.6f));
+    int t1w = measCN("继续", 22);
+    drawCN("继续", bx + (bw - t1w) / 2, by + (bh - 24) / 2, 22, WHITE);
+    if (hover1 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) result = 1;
+
+    // 退出按钮
+    int qy = by + bh + gap;
+    bool hover2 = CheckCollisionPointRec(mouse, { (float)bx, (float)qy, (float)bw, (float)bh });
+    DrawRectangle(bx, qy, bw, bh, hover2 ? Fade(RED, 0.6f) : Fade(WHITE, 0.15f));
+    DrawRectangleLines(bx, qy, bw, bh, Fade(WHITE, 0.6f));
+    int t2w = measCN("退出游戏", 22);
+    drawCN("退出游戏", bx + (bw - t2w) / 2, qy + (bh - 24) / 2, 22, WHITE);
+    if (hover2 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) result = 2;
+
+    return result;
 }
 
 // ---- 新主菜单 ----
