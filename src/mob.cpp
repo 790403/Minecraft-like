@@ -1,0 +1,1 @@
+// mob.cpp - stub (empty until mob system is added)
