@@ -112,7 +112,13 @@ void chunkBuildMesh(Chunk& c, const TextureAtlas& atlas,
                     if (ny >= CHUNK_Y) neighbor = BLOCK_AIR;
                     else neighbor = getBlockGlobal(nx, ny, nz, userData);
 
-                    bool visible = (neighbor == BLOCK_AIR) || (isTransparent(neighbor) && neighbor != t);
+                    bool visible;
+                    if (t == BLOCK_WATER) {
+                        // 水：只对同层水隐藏面，对其他所有方块（空气/固体/叶）都渲染
+                        visible = (neighbor != BLOCK_WATER);
+                    } else {
+                        visible = (neighbor == BLOCK_AIR) || (isTransparent(neighbor) && neighbor != t);
+                    }
                     if (!visible) continue;
 
 	                    int texIdx = texSide;

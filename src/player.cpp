@@ -75,6 +75,16 @@ static int encodeMiningTarget(int bx, int by, int bz) {
     return (bx & 0xFFFF) | ((by & 0xFF) << 16) | ((bz & 0xFFFF) << 24);
 }
 
+// 检测某点是否在水中
+static bool inWater(const World& w, Vector3 pt) {
+    return worldGetBlock(w, (int)floorf(pt.x), (int)floorf(pt.y), (int)floorf(pt.z)) == BLOCK_WATER;
+}
+static bool playerInWater(const Player& p, const World& w) {
+    Vector3 head = { p.pos.x, p.pos.y + PLAYER_EYE, p.pos.z };
+    Vector3 body = { p.pos.x, p.pos.y + 0.1f, p.pos.z };
+    return inWater(w, head) || inWater(w, body);
+}
+
 void playerUpdate(Player& p, World& w, float dt) {
 	    // ---- 生存：饱食度消耗与回血 ----
 	    p.hungerTimer += dt;
@@ -96,7 +106,11 @@ void playerUpdate(Player& p, World& w, float dt) {
 	    if (!p.onGround) {
 	        p.fallDistance += -p.vel.y * dt;
 	    } else {
-	        if (p.fallDistance > 3.0f) {
+	        // 落在水中免摔落伤害
+	        bool landingInWater = false;
+	        Vector3 feet = { p.pos.x, p.pos.y - 0.1f, p.pos.z };
+	        if (inWater(w, feet)) landingInWater = true;
+	        if (!landingInWater && p.fallDistance > 3.0f) {
 	            int e = (int)std::round(p.fallDistance - 3.0f);
 	            if (e > 0) p.hp -= (float)e;
 	        }
@@ -146,15 +160,29 @@ void playerUpdate(Player& p, World& w, float dt) {
 
     bool sprint = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_LEFT_SHIFT);
     float speed = sprint ? SPRINT_SPEED : MOVE_SPEED;
-    p.vel.x = wish.x * speed;
-    p.vel.z = wish.z * speed;
+	    p.vel.x = wish.x * speed;
+	    p.vel.z = wish.z * speed;
 
-    if (IsKeyPressed(KEY_SPACE) && p.onGround) {
-        p.vel.y = JUMP_SPEED;
-        p.onGround = false;
-    }
-    p.vel.y -= GRAVITY * dt;
-    if (p.vel.y < -55.0f) p.vel.y = -55.0f;
+	    // ---- 跳跃 / 游泳 ----
+	    bool sw = playerInWater(p, w);
+	    if (sw) {
+	        // 水中：大幅减弱重力、空格上浮、Shift 下沉
+	        p.vel.y -= GRAVITY * 0.15f * dt;
+	        if (p.vel.y < -8.0f) p.vel.y = -8.0f;
+	        if (IsKeyDown(KEY_SPACE)) { p.vel.y = 4.0f; p.onGround = false; }
+	        if (IsKeyDown(KEY_LEFT_SHIFT)) { p.vel.y -= 6.0f * dt; }
+	        // 水平移动变慢
+	        float waterSlow = 0.5f;
+	        p.vel.x *= (1.0f - (1.0f - waterSlow) * dt * 5.0f);
+	        p.vel.z *= (1.0f - (1.0f - waterSlow) * dt * 5.0f);
+	    } else {
+	        if (IsKeyPressed(KEY_SPACE) && p.onGround) {
+	            p.vel.y = JUMP_SPEED;
+	            p.onGround = false;
+	        }
+	        p.vel.y -= GRAVITY * dt;
+	        if (p.vel.y < -55.0f) p.vel.y = -55.0f;
+	    }
 
     // ---- 逐轴碰撞 ----
     Vector3 delta = { p.vel.x * dt, p.vel.y * dt, p.vel.z * dt };
