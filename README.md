@@ -24,25 +24,15 @@ Windows 搜索框 -> 高级系统设置 -> 环境变量 -> 系统变量 -> Path 
 g++ --version
 ```
 
-### 2. 下载 raylib
+### 2. raylib（已内置）
 
-从 GitHub 下载 raylib 5.5 MinGW-w64 版本：
+raylib 5.5（MinGW-w64 版）已经打包在项目里的 `raylib/` 目录中，**无需下载、无需配置环境变量**。如果该目录被删除，从 GitHub 重新下载即可：
 
 ```
 https://github.com/raysan5/raylib/releases/tag/5.5
 ```
 
-下载 `raylib-5.5_win64_mingw-w64.zip`，解压到 `D:\raylib\raylib-5.5_win64_mingw-w64`。
-
-将 `D:\raylib\raylib-5.5_win64_mingw-w64\include` 添加到系统环境变量 PATH，使 `where raylib.h` 能定位到。
-
-或者设置环境变量：
-```
-搜索 -> 高级系统设置 -> 环境变量
-新建系统变量：
-    变量名: RAYLIB_DIR
-    变量值: D:\raylib\raylib-5.5_win64_mingw-w64
-```
+下载 `raylib-5.5_win64_mingw-w64.zip` 后，把解压出来的 `include` 和 `lib` 放回项目 `raylib/` 目录。
 
 ### 3. 编译
 
@@ -142,6 +132,7 @@ build.bat
 | `texture_atlas.h/cpp` | 纹理图集（程序化生成） |
 | `drop.h/cpp` | 掉落物物理、碰撞、拾取 |
 | `mob.h/cpp` | 生物框架（基础碰撞） |
+| `raylib/` | 内置的 raylib 5.5（`include` 头文件 + `lib` 静态库），无需外接库 |
 
 ## 技术实现
 
