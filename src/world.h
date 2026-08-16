@@ -7,6 +7,7 @@
 #include "texture_atlas.h"
 #include "chest.h"
 #include "furnace.h"
+#include "mob.h"
 #include <unordered_map>
 #include <vector>
 
@@ -31,6 +32,9 @@ struct World {
     
     // 熔炉系统
     FurnaceSystem furnaceSys;
+
+    // 生物系统（猪等）
+    MobWorld mobs;
 };
 
 // 初始化世界（种子、加载半径、加载图集纹理）

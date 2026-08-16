@@ -2,6 +2,7 @@
 #include "player.h"
 #include "world.h"
 #include "drop.h"
+#include "mob.h"
 #include "raymath.h"
 #include <cmath>
 #include <cstdlib>
@@ -193,9 +194,12 @@ void playerUpdate(Player& p, World& w, float dt) {
 
     // ---- 采矿进度（每帧更新）----
     RaycastHit hit = playerRaycast(p, w);
-    int curTarget = hit.hit ? encodeMiningTarget(hit.bx, hit.by, hit.bz) : 0;
+    // 视线命中生物时优先攻击目标，不挖方块（攻击由 main 处理）
+    Vector3 fdir = playerForward(p);
+    bool aimMob = mobRaycast(w.mobs, p.camera.position, fdir, REACH) >= 0;
+    int curTarget = (hit.hit && !aimMob) ? encodeMiningTarget(hit.bx, hit.by, hit.bz) : 0;
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && hit.hit) {
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && hit.hit && !aimMob) {
         BlockType bt = worldGetBlock(w, hit.bx, hit.by, hit.bz);
         if (!isBreakable(bt)) { p.miningTimer = 0.0f; p.miningTarget = 0; }
         else {

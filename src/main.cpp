@@ -28,6 +28,7 @@ int main() {
     unsigned int seed = 20260711u;
     World world;
     worldInit(world, seed, 6);
+    mobInit(world.mobs, 12);   // 生物系统：最多 12 只
 
     Player player;
     playerInit(player, world, 8, 8);
@@ -100,7 +101,7 @@ int main() {
         // ====== 暂停 ======
 	        if (state == GameState::PAUSED) {
 	            BeginDrawing(); ClearBackground(BLACK); drawSky(gt, player.camera);
-	            BeginMode3D(player.camera); worldDraw(world); EndMode3D();
+	            BeginMode3D(player.camera); worldDraw(world); mobDraw(world.mobs); EndMode3D();
 	            drawCrosshair(); drawHUD(player, world, gt, showDebug, world.atlas);
 	            int pauseR = drawPausedOverlay();
 	            EndDrawing();
@@ -195,11 +196,26 @@ int main() {
 	        // 熔炉冶炼（每帧更新，无论界面状态）
 	        world.furnaceSys.updateAll(dt);
 
-			        if (!showInventory && !showChest && !showFurnace) {
-			            playerUpdate(player, world, dt);
-		            worldUpdate(world, player.pos, 1);
-		            dropUpdate(world.drops, dt, world);
-		            worldBuildDirtyMeshes(world, 2);
+	        if (!showInventory && !showChest && !showFurnace) {
+	            // ---- 左键攻击生物（点击，徒手 1 伤害）----
+	            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+	                Vector3 fdir = playerForward(player);
+	                // 攻击距离受方块遮挡限制（隔墙打不到）
+	                RaycastHit bh = playerRaycast(player, world);
+	                float maxDist = bh.hit ? Vector3Distance(player.camera.position, bh.point) : REACH;
+	                int mobIdx = mobRaycast(world.mobs, player.camera.position, fdir, maxDist);
+	                if (mobIdx >= 0) {
+	                    mobHurt(world.mobs, world, mobIdx, 1.0f);
+	                    player.miningTimer = 0.0f;
+	                    player.miningTarget = 0;
+	                }
+	            }
+
+	            playerUpdate(player, world, dt);
+	            worldUpdate(world, player.pos, 1);
+	            dropUpdate(world.drops, dt, world);
+	            mobUpdate(world.mobs, world, player.pos, dt);
+	            worldBuildDirtyMeshes(world, 2);
 
 		            // 快捷栏
 	            for (int i = 0; i < 8; ++i)
@@ -688,6 +704,7 @@ int main() {
 	        drawSky(gt, player.camera);
 	        BeginMode3D(player.camera);
 	        worldDraw(world);
+	        mobDraw(world.mobs);
 	        // 绘制掉落物
 	        dropDraw(world.drops, player.camera, world.atlas);
 		        if (!showInventory && !showChest && !showFurnace) {
