@@ -19,6 +19,12 @@ const ShapedRecipe SHAPED_RECIPES[] = {
     { ITEM_IRON_PICKAXE, 1, {{II,II,II},{_,S,_},{_,S,_}}, true, "铁镐" },
     { ITEM_GOLD_PICKAXE, 1, {{GG,GG,GG},{_,S,_},{_,S,_}}, true, "金镐" },
     { ITEM_DIAMOND_PICKAXE, 1, {{D,D,D},{_,S,_},{_,S,_}}, true, "钻石镐" },
+    // 剑（材料 x2 竖排 + 木棍 x1 竖排）
+    { ITEM_WOOD_SWORD, 1, {{_,P,_},{_,P,_},{_,S,_}}, true, "木剑" },
+    { ITEM_STONE_SWORD, 1, {{_,C,_},{_,C,_},{_,S,_}}, true, "石剑" },
+    { ITEM_IRON_SWORD, 1, {{_,II,_},{_,II,_},{_,S,_}}, true, "铁剑" },
+    { ITEM_GOLD_SWORD, 1, {{_,GG,_},{_,GG,_},{_,S,_}}, true, "金剑" },
+    { ITEM_DIAMOND_SWORD, 1, {{_,D,_},{_,D,_},{_,S,_}}, true, "钻石剑" },
 };
 const int SHAPED_RECIPE_COUNT = sizeof(SHAPED_RECIPES) / sizeof(SHAPED_RECIPES[0]);
 

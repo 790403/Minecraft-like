@@ -2,6 +2,7 @@
 #include "texture_atlas.h"
 #include "block.h"
 #include <cmath>
+#include <cstdio>
 
 static inline void setpix(Image& img, int x, int y, Color c) {
     if (x<0||y<0||x>=img.width||y>=img.height) return;
@@ -394,6 +395,53 @@ static void drawItemIronPickaxe(Image& img, int tx, int ty) { drawPickaxe(img, t
 static void drawItemGoldPickaxe(Image& img, int tx, int ty) { drawPickaxe(img, tx, ty, { 100, 70, 40, 255 }, { 235, 200, 50, 255 }); }
 static void drawItemDiamondPickaxe(Image& img, int tx, int ty) { drawPickaxe(img, tx, ty, { 100, 70, 40, 255 }, { 70, 210, 200, 255 }); }
 
+// ---- 剑图标（MC 风格：刃尖右上斜向左下，护手+斜柄在同一对角线上）----
+// 0=透明, 1=刃, 2=刃高光, 3=护手, 4=手柄
+static const int SWORD_MAP[16][16] = {
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},  // row 0
+    {0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0},  // row 1
+    {0,0,0,0,0,0,0,0,0,0,0,1,2,1,1,0},  // row 2
+    {0,0,0,0,0,0,0,0,0,0,1,2,1,1,1,0},  // row 3
+    {0,0,0,0,0,0,0,0,0,1,2,1,1,1,0,0},  // row 4
+    {0,0,0,0,0,0,0,0,1,2,1,1,1,0,0,0},  // row 5
+    {0,0,0,0,0,0,0,1,2,1,1,1,0,0,0,0},  // row 6
+    {0,0,0,0,0,0,1,2,1,1,1,0,0,0,0,0},  // row 7
+    {0,0,3,0,0,1,2,1,1,1,0,0,0,0,0,0},  // row 8
+    {0,0,3,3,1,1,1,1,1,0,0,0,0,0,0,0},  // row 9
+    {0,0,0,3,3,1,1,1,0,0,0,0,0,0,0,0},  // row 10 护手
+    {0,0,0,4,3,3,1,0,0,0,0,0,0,0,0,0},  // row 11 柄沿对角线向左下
+    {0,0,4,4,4,3,3,0,0,0,0,0,0,0,0,0},  // row 12
+    {0,4,4,4,0,0,3,3,0,0,0,0,0,0,0,0},  // row 13
+    {0,4,4,0,0,0,0,0,0,0,0,0,0,0,0,0},  // row 14
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},  // row 15
+};
+
+static void drawSword(Image& img, int tx, int ty, Color bladeCol, Color handleCol) {
+    int ox = tx * 16, oy = ty * 16;
+    fillTile(img, tx, ty, { 0, 0, 0, 0 });
+    Color hL = shade(bladeCol, 40), hD = shade(handleCol, -30);
+
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 15; x >= 0; --x) {
+            Color c = { 0, 0, 0, 0 };
+            switch (SWORD_MAP[y][x]) {
+                case 1: c = bladeCol; break;
+                case 2: c = hL; break;
+                case 3: c = hD; break;
+                case 4: c = handleCol; break;
+                default: continue;
+            }
+            setpix(img, ox + x, oy + y, c);
+        }
+    }
+}
+
+static void drawItemWoodSword(Image& img, int tx, int ty) { drawSword(img, tx, ty, { 150, 110, 70, 255 }, { 120, 85, 50, 255 }); }
+static void drawItemStoneSword(Image& img, int tx, int ty) { drawSword(img, tx, ty, { 125, 125, 125, 255 }, { 100, 70, 40, 255 }); }
+static void drawItemIronSword(Image& img, int tx, int ty) { drawSword(img, tx, ty, { 195, 195, 205, 255 }, { 100, 70, 40, 255 }); }
+static void drawItemGoldSword(Image& img, int tx, int ty) { drawSword(img, tx, ty, { 240, 205, 55, 255 }, { 100, 70, 40, 255 }); }
+static void drawItemDiamondSword(Image& img, int tx, int ty) { drawSword(img, tx, ty, { 75, 215, 205, 255 }, { 100, 70, 40, 255 }); }
+
 // ---- 食物纹理 ----
 static void drawItemApple(Image& img, int tx, int ty) {
     int ox = tx * 16, oy = ty * 16;
@@ -453,6 +501,42 @@ static void drawItemRawMeat(Image& img, int tx, int ty, Color base) {
 }
 static void drawItemRawBeef(Image& img, int tx, int ty) { drawItemRawMeat(img, tx, ty, { 180, 60, 60, 255 }); }
 static void drawItemRawPork(Image& img, int tx, int ty) { drawItemRawMeat(img, tx, ty, { 200, 140, 120, 255 }); }
+static void drawItemRawMutton(Image& img, int tx, int ty) { drawItemRawMeat(img, tx, ty, { 190, 110, 130, 255 }); }
+static void drawItemRottenFlesh(Image& img, int tx, int ty) {
+    drawItemRawMeat(img, tx, ty, { 115, 125, 65, 255 });
+    int ox = tx * 16, oy = ty * 16;
+    // 腐败斑点（暗绿/黑）
+    for (int i = 0; i < 5; ++i) {
+        int sx = 3 + (int)(rnd(i, 0, 331) * 10);
+        int sy = 3 + (int)(rnd(i, 1, 331) * 10);
+        setpix(img, ox + sx, oy + sy, { 60, 70, 35, 255 });
+        setpix(img, ox + sx + 1, oy + sy, { 60, 70, 35, 255 });
+    }
+}
+static void drawItemWool(Image& img, int tx, int ty) {
+    int ox = tx * 16, oy = ty * 16;
+    fillTile(img, tx, ty, { 0, 0, 0, 0 });
+    // 羊毛团：白色圆团 + 蓬松毛刺
+    for (int y = 3; y <= 12; ++y) {
+        for (int x = 3; x <= 12; ++x) {
+            float dx = (x - 7.5f), dy = (y - 7.5f);
+            if (dx*dx + dy*dy <= 23.0f)
+                setpix(img, ox + x, oy + y, { 225, 225, 220, 255 });
+        }
+    }
+    // 毛刺
+    setpix(img, ox + 2, oy + 6, { 225, 225, 220, 255 });
+    setpix(img, ox + 2, oy + 7, { 225, 225, 220, 255 });
+    setpix(img, ox + 13, oy + 8, { 225, 225, 220, 255 });
+    setpix(img, ox + 5, oy + 2, { 225, 225, 220, 255 });
+    setpix(img, ox + 10, oy + 13, { 225, 225, 220, 255 });
+    // 阴影
+    for (int i = 0; i < 8; ++i) {
+        int sx = 4 + (int)(rnd(i, 0, 341) * 8);
+        int sy = 8 + (int)(rnd(i, 1, 341) * 5);
+        setpix(img, ox + sx, oy + sy, { 195, 195, 190, 255 });
+    }
+}
 static void drawItemRawChicken(Image& img, int tx, int ty) {
     int ox = tx * 16, oy = ty * 16;
     fillTile(img, tx, ty, { 0, 0, 0, 0 });
@@ -515,9 +599,19 @@ TextureAtlas atlasLoad() {
     S(TEX_ITEM_RAW_BEEF,c,r);      drawItemRawBeef(img,c,r);
     S(TEX_ITEM_RAW_PORK,c,r);      drawItemRawPork(img,c,r);
     S(TEX_ITEM_RAW_CHICKEN,c,r);   drawItemRawChicken(img,c,r);
+    // 生物掉落物
+    S(TEX_ITEM_RAW_MUTTON,c,r);    drawItemRawMutton(img,c,r);
+    S(TEX_ITEM_WOOL,c,r);          drawItemWool(img,c,r);
+    S(TEX_ITEM_ROTTEN_FLESH,c,r);  drawItemRottenFlesh(img,c,r);
+    // 剑
+    S(TEX_ITEM_WOOD_SWORD,c,r);    drawItemWoodSword(img,c,r);
+    S(TEX_ITEM_STONE_SWORD,c,r);   drawItemStoneSword(img,c,r);
+    S(TEX_ITEM_IRON_SWORD,c,r);    drawItemIronSword(img,c,r);
+    S(TEX_ITEM_GOLD_SWORD,c,r);    drawItemGoldSword(img,c,r);
+    S(TEX_ITEM_DIAMOND_SWORD,c,r); drawItemDiamondSword(img,c,r);
 
     TextureAtlas atlas{};
-	    atlas.texture = LoadTextureFromImage(img);
+    atlas.texture = LoadTextureFromImage(img);
 	    SetTextureFilter(atlas.texture, TEXTURE_FILTER_POINT);
 	    SetTextureWrap(atlas.texture, TEXTURE_WRAP_CLAMP);
     UnloadImage(img);

@@ -1,4 +1,4 @@
-// mob.h - 生物系统：猪（后续可扩展牛/鸡/羊）
+// mob.h - 生物系统：猪/牛/羊/僵尸（漫步 AI、追击、攻击、掉落）
 #pragma once
 #include "raylib.h"
 #include <vector>
@@ -8,11 +8,35 @@ struct World; // 前置声明（避免循环依赖）
 enum MobType : int {
     MOB_NONE = 0,
     MOB_PIG = 1,
+    MOB_COW = 2,
+    MOB_SHEEP = 3,
+    MOB_ZOMBIE = 4,
 };
 
-// 猪的碰撞箱尺寸（与 MC 猪一致：0.9x0.9x0.9）
-constexpr float MOB_WIDTH = 0.9f;
-constexpr float MOB_HEIGHT = 0.9f;
+// 碰撞箱尺寸（MC 参考：猪/牛/羊 0.9 宽，牛/羊 1.3 高，僵尸 0.6x1.8）
+inline float mobWidth(MobType t) {
+    switch (t) {
+        case MOB_ZOMBIE: return 0.6f;
+        default:         return 0.9f;
+    }
+}
+inline float mobHeight(MobType t) {
+    switch (t) {
+        case MOB_COW:
+        case MOB_SHEEP:  return 1.3f;
+        case MOB_ZOMBIE: return 1.8f;
+        default:         return 0.9f;
+    }
+}
+inline float mobMaxHp(MobType t) {
+    switch (t) {
+        case MOB_SHEEP:  return 8.0f;
+        case MOB_ZOMBIE: return 20.0f;
+        default:         return 10.0f;
+    }
+}
+inline bool mobIsHostile(MobType t) { return t == MOB_ZOMBIE; }
+
 constexpr float MOB_REACH = 5.0f;   // 攻击距离（与方块拾取一致）
 
 struct Mob {
@@ -33,29 +57,34 @@ struct Mob {
     bool hasTarget;     // 是否正在走向目标
     float bobPhase;     // 走路身体起伏相位
     float hurtFlash;    // 受伤红闪剩余时间（秒）
+    float attackCooldown; // 攻击冷却（僵尸）
 
     bool dead;
 };
 
-// 碰撞箱辅助（脚底 pos，中心 pos.y + MOB_HEIGHT/2）
-inline float mobMinX(const Mob& m) { return m.pos.x - MOB_WIDTH / 2; }
-inline float mobMaxX(const Mob& m) { return m.pos.x + MOB_WIDTH / 2; }
+// 碰撞箱辅助（脚底 pos，中心 pos.y + mobHeight/2）
+inline float mobMinX(const Mob& m) { return m.pos.x - mobWidth(m.type) / 2; }
+inline float mobMaxX(const Mob& m) { return m.pos.x + mobWidth(m.type) / 2; }
 inline float mobMinY(const Mob& m) { return m.pos.y; }
-inline float mobMaxY(const Mob& m) { return m.pos.y + MOB_HEIGHT; }
-inline float mobMinZ(const Mob& m) { return m.pos.z - MOB_WIDTH / 2; }
-inline float mobMaxZ(const Mob& m) { return m.pos.z + MOB_WIDTH / 2; }
+inline float mobMaxY(const Mob& m) { return m.pos.y + mobHeight(m.type); }
+inline float mobMinZ(const Mob& m) { return m.pos.z - mobWidth(m.type) / 2; }
+inline float mobMaxZ(const Mob& m) { return m.pos.z + mobWidth(m.type) / 2; }
 
 struct MobWorld {
     std::vector<Mob> mobs;
-    float spawnTimer;   // 生成尝试计时器
-    int maxMobs;        // 世界生物数量上限
+    float spawnTimer;      // 被动生物生成尝试计时器
+    float zombieSpawnTimer;// 僵尸生成尝试计时器
+    int maxMobs;           // 被动生物（猪/牛/羊）数量上限
+    int maxZombies;        // 僵尸数量上限
 };
 
-// 初始化生物世界（maxMobs 为数量上限）
-void mobInit(MobWorld& mw, int maxMobs);
+// 初始化生物世界
+void mobInit(MobWorld& mw, int maxMobs, int maxZombies);
 
-// 每帧更新：生成、AI、物理、清理
-void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt);
+// 每帧更新：生成、AI、物理、清理。
+// isNight：当前是否夜晚（僵尸夜间追击玩家）。
+// 返回本帧敌对生物对玩家造成的总伤害。
+float mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt, bool isNight);
 
 // 绘制所有生物（需在 BeginMode3D 内调用）
 void mobDraw(const MobWorld& mw);

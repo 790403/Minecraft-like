@@ -174,11 +174,19 @@ static int getDropTexSlot(int item) {
         case ITEM_IRON_PICKAXE: return TEX_ITEM_IRON_PICKAXE;
         case ITEM_GOLD_PICKAXE: return TEX_ITEM_GOLD_PICKAXE;
         case ITEM_DIAMOND_PICKAXE:return TEX_ITEM_DIAMOND_PICKAXE;
+        case ITEM_WOOD_SWORD:   return TEX_ITEM_WOOD_SWORD;
+        case ITEM_STONE_SWORD:  return TEX_ITEM_STONE_SWORD;
+        case ITEM_IRON_SWORD:   return TEX_ITEM_IRON_SWORD;
+        case ITEM_GOLD_SWORD:   return TEX_ITEM_GOLD_SWORD;
+        case ITEM_DIAMOND_SWORD:return TEX_ITEM_DIAMOND_SWORD;
         case ITEM_APPLE:        return TEX_ITEM_APPLE;
         case ITEM_BREAD:        return TEX_ITEM_BREAD;
         case ITEM_RAW_BEEF:     return TEX_ITEM_RAW_BEEF;
         case ITEM_RAW_PORK:     return TEX_ITEM_RAW_PORK;
         case ITEM_RAW_CHICKEN:  return TEX_ITEM_RAW_CHICKEN;
+        case ITEM_RAW_MUTTON:   return TEX_ITEM_RAW_MUTTON;
+        case ITEM_WOOL:         return TEX_ITEM_WOOL;
+        case ITEM_ROTTEN_FLESH: return TEX_ITEM_ROTTEN_FLESH;
         default:                return -1;
     }
 }

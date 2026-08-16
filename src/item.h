@@ -42,12 +42,22 @@ enum ItemType : int {
     ITEM_DIAMOND_PICKAXE = 303,
     ITEM_GOLD_PICKAXE = 304,
 
+    // 剑
+    ITEM_WOOD_SWORD = 305,
+    ITEM_STONE_SWORD = 306,
+    ITEM_IRON_SWORD = 307,
+    ITEM_GOLD_SWORD = 308,
+    ITEM_DIAMOND_SWORD = 309,
+
     // 食物
     ITEM_APPLE = 400,
     ITEM_BREAD = 401,
     ITEM_RAW_BEEF = 402,
     ITEM_RAW_PORK = 403,
     ITEM_RAW_CHICKEN = 404,
+    ITEM_RAW_MUTTON = 405,    // 生羊肉（羊掉落）
+    ITEM_WOOL = 406,          // 羊毛（羊掉落）
+    ITEM_ROTTEN_FLESH = 407,  // 腐肉（僵尸掉落）
 
     ITEM_NONE = 0,
 };
@@ -60,6 +70,23 @@ enum ToolTier {
     TIER_IRON = 3,
     TIER_DIAMOND = 4,
 };
+
+// 是否为剑（用于近战伤害）
+inline bool isSword(int item) {
+    return item >= ITEM_WOOD_SWORD && item <= ITEM_DIAMOND_SWORD;
+}
+
+// 剑的近战伤害（MC 数值：木4 石5 铁6 金4 钻7）
+inline int getSwordDamage(int item) {
+    switch (item) {
+        case ITEM_WOOD_SWORD:    return 4;
+        case ITEM_STONE_SWORD:   return 5;
+        case ITEM_IRON_SWORD:    return 6;
+        case ITEM_GOLD_SWORD:    return 4;
+        case ITEM_DIAMOND_SWORD: return 7;
+        default:                 return 1; // 徒手
+    }
+}
 
 // 获取物品对应的工具等级（非工具返回 TIER_HAND）
 inline ToolTier getToolTier(int item) {
@@ -114,9 +141,14 @@ inline const char* itemName(int item) {
         case ITEM_WOOD_PICKAXE: return "木镐"; case ITEM_STONE_PICKAXE: return "石镐";
         case ITEM_IRON_PICKAXE: return "铁镐"; case ITEM_DIAMOND_PICKAXE: return "钻石镐";
         case ITEM_GOLD_PICKAXE: return "金镐";
+        case ITEM_WOOD_SWORD: return "木剑"; case ITEM_STONE_SWORD: return "石剑";
+        case ITEM_IRON_SWORD: return "铁剑"; case ITEM_GOLD_SWORD: return "金剑";
+        case ITEM_DIAMOND_SWORD: return "钻石剑";
         case ITEM_APPLE: return "苹果"; case ITEM_BREAD: return "面包";
         case ITEM_RAW_BEEF: return "生牛肉"; case ITEM_RAW_PORK: return "生猪排";
         case ITEM_RAW_CHICKEN: return "生鸡肉";
+        case ITEM_RAW_MUTTON: return "生羊肉"; case ITEM_WOOL: return "羊毛";
+        case ITEM_ROTTEN_FLESH: return "腐肉";
         default: return "未知";
     }
 }
@@ -129,6 +161,8 @@ inline int foodHunger(int item) {
         case ITEM_RAW_BEEF: return 3;
         case ITEM_RAW_PORK: return 3;
         case ITEM_RAW_CHICKEN: return 2;
+        case ITEM_RAW_MUTTON: return 2;
+        case ITEM_ROTTEN_FLESH: return 2; // 无中毒惩罚
         default:          return 0;
     }
 }

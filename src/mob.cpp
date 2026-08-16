@@ -1,4 +1,4 @@
-// mob.cpp - 生物系统实现（猪：随机漫步、重力碰撞、可攻击、死亡掉落）
+// mob.cpp - 生物系统实现（猪/牛/羊：漫步+恐慌；僵尸：夜间追击攻击）
 #include "mob.h"
 #include "world.h"
 #include "drop.h"
@@ -8,9 +8,9 @@
 #include <cmath>
 #include <cstdlib>
 
-static const float MOB_GRAVITY = 26.0f;      // 与玩家一致
-static const float MOB_FALL_DAMAGE_BASE = 3.0f; // 超过 3 格开始摔伤
-static const float MOB_UNLOAD_DIST = 100.0f; // 距玩家过远自动清除
+static const float MOB_GRAVITY = 26.0f;          // 与玩家一致
+static const float MOB_FALL_DAMAGE_BASE = 3.0f;  // 超过 3 格开始摔伤
+static const float MOB_UNLOAD_DIST = 100.0f;     // 距玩家过远自动清除
 
 // ========== 辅助 ==========
 static bool mobInWater(const World& w, const Mob& m) {
@@ -20,12 +20,13 @@ static bool mobInWater(const World& w, const Mob& m) {
 
 // AABB 与方块碰撞
 static bool collidesAt(const World& w, const Mob& m, Vector3 testPos) {
-    int x0 = (int)floorf(testPos.x - MOB_WIDTH / 2);
-    int x1 = (int)floorf(testPos.x + MOB_WIDTH / 2);
+    float hw = mobWidth(m.type) / 2;
+    int x0 = (int)floorf(testPos.x - hw);
+    int x1 = (int)floorf(testPos.x + hw);
     int y0 = (int)floorf(testPos.y);
-    int y1 = (int)floorf(testPos.y + MOB_HEIGHT);
-    int z0 = (int)floorf(testPos.z - MOB_WIDTH / 2);
-    int z1 = (int)floorf(testPos.z + MOB_WIDTH / 2);
+    int y1 = (int)floorf(testPos.y + mobHeight(m.type));
+    int z0 = (int)floorf(testPos.z - hw);
+    int z1 = (int)floorf(testPos.z + hw);
     for (int x = x0; x <= x1; ++x)
         for (int y = y0; y <= y1; ++y)
             for (int z = z0; z <= z1; ++z)
@@ -34,45 +35,23 @@ static bool collidesAt(const World& w, const Mob& m, Vector3 testPos) {
 }
 
 // ========== 初始化 ==========
-void mobInit(MobWorld& mw, int maxMobs) {
+void mobInit(MobWorld& mw, int maxMobs, int maxZombies) {
     mw.mobs.clear();
     mw.spawnTimer = 1.0f;
+    mw.zombieSpawnTimer = 6.0f;
     mw.maxMobs = maxMobs;
+    mw.maxZombies = maxZombies;
 }
 
 // ========== 生成 ==========
-// 在玩家周围 24~48 格环带随机选点，找可站立地表（草/沙/泥土/圆石，上方是空气）
-static void trySpawnMob(MobWorld& mw, World& w, Vector3 playerPos) {
-    if ((int)mw.mobs.size() >= mw.maxMobs) return;
-
-    float ang = (float)rand() / RAND_MAX * 2.0f * PI;
-    float rad = 24.0f + (float)rand() / RAND_MAX * 24.0f; // 24~48
-    int x = (int)floorf(playerPos.x + cosf(ang) * rad);
-    int z = (int)floorf(playerPos.z + sinf(ang) * rad);
-
-    int gy = worldFindGroundY(w, x, z);
-    if (gy <= 1 || gy >= CHUNK_Y - 2) return;
-
-    BlockType ground = worldGetBlock(w, x, gy - 1, z);
-    if (ground != BLOCK_GRASS && ground != BLOCK_SAND
-        && ground != BLOCK_DIRT && ground != BLOCK_COBBLE) return;
-    // 上方需要能容纳 0.9 格高的身体
-    if (worldGetBlock(w, x, gy, z) != BLOCK_AIR) return;
-    if (worldGetBlock(w, x, gy + 1, z) != BLOCK_AIR) return;
-
-    // 避免与已有生物重叠
-    for (const auto& o : mw.mobs) {
-        float d = Vector2Distance({ o.pos.x, o.pos.z }, { (float)x + 0.5f, (float)z + 0.5f });
-        if (d < 1.5f) return;
-    }
-
+static Mob makeMob(MobType t, Vector3 pos) {
     Mob m = {};
-    m.type = MOB_PIG;
-    m.pos = { (float)x + 0.5f, (float)gy, (float)z + 0.5f };
+    m.type = t;
+    m.pos = pos;
     m.vel = { 0, 0, 0 };
     m.yaw = (float)rand() / RAND_MAX * 2.0f * PI;
-    m.hp = 10.0f;
-    m.maxHp = 10.0f;
+    m.hp = mobMaxHp(t);
+    m.maxHp = mobMaxHp(t);
     m.onGround = false;
     m.fallDistance = 0.0f;
     m.thinkTimer = 1.0f + (float)rand() / RAND_MAX * 2.0f;
@@ -82,8 +61,62 @@ static void trySpawnMob(MobWorld& mw, World& w, Vector3 playerPos) {
     m.hasTarget = false;
     m.bobPhase = 0.0f;
     m.hurtFlash = 0.0f;
+    m.attackCooldown = 0.0f;
     m.dead = false;
-    mw.mobs.push_back(m);
+    return m;
+}
+
+// 检查某位置是否能容纳生物（地面可站、上方有空间、不与其他生物重叠）
+static bool spawnPosOk(const MobWorld& mw, const World& w, int x, int z, int gy) {
+    if (gy <= 1 || gy >= CHUNK_Y - 2) return false;
+    BlockType ground = worldGetBlock(w, x, gy - 1, z);
+    if (ground == BLOCK_WATER || ground == BLOCK_LEAVES) return false;
+    if (!isSolid(ground)) return false;
+    if (worldGetBlock(w, x, gy, z) != BLOCK_AIR) return false;
+    if (worldGetBlock(w, x, gy + 1, z) != BLOCK_AIR) return false;
+    for (const auto& o : mw.mobs) {
+        float d = Vector2Distance({ o.pos.x, o.pos.z }, { (float)x + 0.5f, (float)z + 0.5f });
+        if (d < 1.5f) return false;
+    }
+    return true;
+}
+
+// 被动生物（猪/牛/羊）：玩家周围 20~40 格环带，草/沙/泥土/圆石地表
+static bool trySpawnPassive(MobWorld& mw, World& w, Vector3 playerPos) {
+    if ((int)mw.mobs.size() >= mw.maxMobs) return false;
+
+    float ang = (float)rand() / RAND_MAX * 2.0f * PI;
+    float rad = 20.0f + (float)rand() / RAND_MAX * 20.0f;
+    int x = (int)floorf(playerPos.x + cosf(ang) * rad);
+    int z = (int)floorf(playerPos.z + sinf(ang) * rad);
+
+    int gy = worldFindGroundY(w, x, z);
+    BlockType ground = worldGetBlock(w, x, gy - 1, z);
+    if (ground != BLOCK_GRASS && ground != BLOCK_SAND
+        && ground != BLOCK_DIRT && ground != BLOCK_COBBLE) return false;
+    if (!spawnPosOk(mw, w, x, z, gy)) return false;
+
+    MobType t = (MobType)(MOB_PIG + rand() % 3); // 猪/牛/羊
+    mw.mobs.push_back(makeMob(t, { (float)x + 0.5f, (float)gy, (float)z + 0.5f }));
+    return true;
+}
+
+// 僵尸：夜晚在玩家周围 24~40 格，任意实体地面
+static void trySpawnZombie(MobWorld& mw, World& w, Vector3 playerPos) {
+    int zombieCount = 0;
+    for (const auto& m : mw.mobs)
+        if (m.type == MOB_ZOMBIE) ++zombieCount;
+    if (zombieCount >= mw.maxZombies) return;
+
+    float ang = (float)rand() / RAND_MAX * 2.0f * PI;
+    float rad = 24.0f + (float)rand() / RAND_MAX * 16.0f;
+    int x = (int)floorf(playerPos.x + cosf(ang) * rad);
+    int z = (int)floorf(playerPos.z + sinf(ang) * rad);
+
+    int gy = worldFindGroundY(w, x, z);
+    if (!spawnPosOk(mw, w, x, z, gy)) return;
+
+    mw.mobs.push_back(makeMob(MOB_ZOMBIE, { (float)x + 0.5f, (float)gy, (float)z + 0.5f }));
 }
 
 // ========== 地面检测 ==========
@@ -135,20 +168,47 @@ static void mobPickTarget(World& w, Mob& m, Vector3 playerPos) {
     m.thinkTimer = 1.0f + (float)rand() / RAND_MAX * 2.0f;
 }
 
-// ========== 死亡掉落（掉落 1~3 个生猪排）==========
+// ========== 死亡掉落 ==========
 static void dropMobLoot(World& w, const Mob& m) {
-    Vector3 center = { m.pos.x, m.pos.y + MOB_HEIGHT / 2, m.pos.z };
-    int cnt = 1 + rand() % 3;
-    dropSpawn(w.drops, center, ITEM_RAW_PORK, cnt);
+    Vector3 center = { m.pos.x, m.pos.y + mobHeight(m.type) / 2, m.pos.z };
+    switch (m.type) {
+        case MOB_PIG:
+            dropSpawn(w.drops, center, ITEM_RAW_PORK, 1 + rand() % 3);
+            break;
+        case MOB_COW:
+            dropSpawn(w.drops, center, ITEM_RAW_BEEF, 1 + rand() % 3);
+            break;
+        case MOB_SHEEP:
+            dropSpawn(w.drops, center, ITEM_WOOL, 1);
+            dropSpawn(w.drops, center, ITEM_RAW_MUTTON, 1 + rand() % 2);
+            break;
+        case MOB_ZOMBIE: {
+            int r = rand() % 100;
+            if (r < 50)      dropSpawn(w.drops, center, ITEM_ROTTEN_FLESH, 1);
+            else if (r < 75) dropSpawn(w.drops, center, ITEM_ROTTEN_FLESH, 2);
+            break;
+        }
+        default: break;
+    }
 }
 
 // ========== 每帧更新 ==========
-void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
+float mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt, bool isNight) {
+    float damage = 0.0f;
+
     // ---- 生成 ----
     mw.spawnTimer -= dt;
     if (mw.spawnTimer <= 0.0f) {
-        mw.spawnTimer = 3.0f + (float)rand() / RAND_MAX * 2.0f;
-        trySpawnMob(mw, w, playerPos);
+        mw.spawnTimer = 2.0f + (float)rand() / RAND_MAX * 2.0f; // 2~4 秒
+        // 每次多试几个位置提高成功率（每轮最多生成 2 只）
+        int spawned = 0;
+        for (int k = 0; k < 3 && spawned < 2; ++k)
+            if (trySpawnPassive(mw, w, playerPos)) ++spawned;
+    }
+    mw.zombieSpawnTimer -= dt;
+    if (mw.zombieSpawnTimer <= 0.0f) {
+        mw.zombieSpawnTimer = 5.0f + (float)rand() / RAND_MAX * 3.0f;
+        if (isNight) trySpawnZombie(mw, w, playerPos);
     }
 
     // ---- 逐个更新 ----
@@ -174,8 +234,32 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
         m.hurtFlash -= dt;
         if (m.panicTimer > 0.0f) m.panicTimer -= dt;
 
-        // ---- AI：目标点漫步（仿 MC WanderGoal / PanicGoal）----
-        if (m.hasTarget) {
+        bool hostile = mobIsHostile(m.type);
+        // 僵尸：夜晚追击玩家（白天漫游）
+        bool chase = hostile && isNight;
+        if (chase) {
+            float pd = Vector2Distance({ m.pos.x, m.pos.z }, { playerPos.x, playerPos.z });
+            if (pd < 20.0f) {
+                m.hasTarget = true;
+                m.tx = (int)floorf(playerPos.x);
+                m.tz = (int)floorf(playerPos.z);
+                m.stuckTimer = 0.0f;
+            } else if (pd > 28.0f) {
+                m.hasTarget = false;
+            }
+            // 近身攻击
+            m.attackCooldown -= dt;
+            float hd = Vector2Distance({ m.pos.x, m.pos.z }, { playerPos.x, playerPos.z });
+            bool vertOverlap = m.pos.y < playerPos.y + 1.8f
+                            && m.pos.y + mobHeight(m.type) > playerPos.y;
+            if (hd < 1.3f && vertOverlap && m.attackCooldown <= 0.0f) {
+                damage += 3.0f; // 每次攻击 3 点伤害（MC 普通难度）
+                m.attackCooldown = 1.0f;
+            }
+        }
+
+        // ---- AI：目标点漫步 ----
+        if (m.hasTarget && !chase) {
             // 到达目标：站一会儿再选新目标
             float dx = m.tx + 0.5f - m.pos.x;
             float dz = m.tz + 0.5f - m.pos.z;
@@ -183,7 +267,7 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
                 m.hasTarget = false;
                 m.thinkTimer = 1.0f + (float)rand() / RAND_MAX * 2.0f;
             }
-        } else {
+        } else if (!m.hasTarget) {
             // 休息结束 → 选新目标
             m.thinkTimer -= dt;
             if (m.thinkTimer <= 0.0f) mobPickTarget(w, m, playerPos);
@@ -197,8 +281,8 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
             float dz = m.tz + 0.5f - m.pos.z;
             float hDist = sqrtf(dx * dx + dz * dz);
             if (hDist > 0.001f) {
-                // 悬崖回避（仿 MC：寻路不选悬空节点；水中会游泳，跳过检测）
-                if (!mobInWater(w, m)) {
+                // 悬崖回避（仿 MC：寻路不选悬空节点；水中/追击中跳过）
+                if (!mobInWater(w, m) && !chase) {
                     int hereY = groundBelow(w, (int)floorf(m.pos.x), (int)floorf(m.pos.z), (int)floorf(m.pos.y));
                     int fwdY = groundBelow(w, (int)floorf(m.pos.x + dx / hDist * 0.7f),
                                              (int)floorf(m.pos.z + dz / hDist * 0.7f),
@@ -211,7 +295,9 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
                     }
                 }
                 if (hDist > 0.001f) {
-                    float speed = (m.panicTimer > 0.0f) ? 1.2f : 0.5f; // 恐慌时约 2.4 倍速
+                    float speed = 0.5f;
+                    if (m.panicTimer > 0.0f) speed = 1.2f; // 恐慌约 2.4 倍速
+                    if (chase) speed = 0.9f;               // 僵尸追击
                     m.vel.x = dx / hDist * speed;
                     m.vel.z = dz / hDist * speed;
                     m.bobPhase += dt * 7.0f; // 走路摆动
@@ -233,7 +319,7 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
 
         // ---- 重力 / 浮水 ----
         if (mobInWater(w, m)) {
-            // 猪会游泳：在水中固定上浮，直到露出水面
+            // 生物会游泳：在水中固定上浮，直到露出水面
             m.vel.y = 0.8f;
             m.onGround = false;
         } else {
@@ -296,7 +382,7 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
         // ---- 玩家推开（防止互相穿模）----
         {
             Vector3 pc = { playerPos.x, playerPos.y + 0.9f, playerPos.z }; // 玩家身体中心
-            Vector3 mc = { m.pos.x, m.pos.y + MOB_HEIGHT / 2, m.pos.z };
+            Vector3 mc = { m.pos.x, m.pos.y + mobHeight(m.type) / 2, m.pos.z };
             float dx = mc.x - pc.x, dz = mc.z - pc.z;
             float hd = sqrtf(dx * dx + dz * dz);
             float overlap = 0.75f - hd; // 0.45+0.3 - 距离
@@ -312,6 +398,7 @@ void mobUpdate(MobWorld& mw, World& w, Vector3 playerPos, float dt) {
 
         ++i;
     }
+    return damage;
 }
 
 // ========== 视线与生物相交 ==========
@@ -320,8 +407,9 @@ int mobRaycast(const MobWorld& mw, Vector3 origin, Vector3 dir, float maxDist) {
     float bestT = maxDist;
     for (size_t i = 0; i < mw.mobs.size(); ++i) {
         const Mob& m = mw.mobs[i];
-        Vector3 min = { m.pos.x - MOB_WIDTH / 2, m.pos.y, m.pos.z - MOB_WIDTH / 2 };
-        Vector3 max = { m.pos.x + MOB_WIDTH / 2, m.pos.y + MOB_HEIGHT, m.pos.z + MOB_WIDTH / 2 };
+        float hw = mobWidth(m.type) / 2;
+        Vector3 min = { m.pos.x - hw, m.pos.y, m.pos.z - hw };
+        Vector3 max = { m.pos.x + hw, m.pos.y + mobHeight(m.type), m.pos.z + hw };
 
         // slab 法：射线与 AABB 求交
         float tmin = 0.0f, tmax = maxDist;
@@ -367,7 +455,8 @@ bool mobHurt(MobWorld& mw, World& w, int idx, float dmg) {
     if (m.dead) return false;
     m.hp -= dmg;
     m.hurtFlash = 0.25f;
-    m.panicTimer = 5.0f; // 被攻击后逃跑 5 秒（MC PanicGoal 约 100 ticks）
+    // 被动生物被攻击会逃跑 5 秒（僵尸不逃跑）
+    if (!mobIsHostile(m.type)) m.panicTimer = 5.0f;
     if (m.hp <= 0.0f) {
         m.dead = true;
         dropMobLoot(w, m);
@@ -380,8 +469,11 @@ bool mobHurt(MobWorld& mw, World& w, int idx, float dmg) {
 
 const char* mobName(MobType t) {
     switch (t) {
-        case MOB_PIG: return "猪";
-        default:      return "未知生物";
+        case MOB_PIG:    return "猪";
+        case MOB_COW:    return "牛";
+        case MOB_SHEEP:  return "羊";
+        case MOB_ZOMBIE: return "僵尸";
+        default:         return "未知生物";
     }
 }
 
@@ -419,51 +511,135 @@ static void drawColoredBox(Vector3 center, Vector3 size, Color base) {
     rlVertex3f(center.x + hx, center.y + hy, center.z - hz); rlVertex3f(center.x + hx, center.y + hy, center.z + hz); rlEnd();
 }
 
-// 绘制一只猪：身体 + 头 + 鼻子 + 耳朵 + 4 条腿，整体绕 Y 旋转朝向
-static void drawPig(const Mob& m) {
-    const Color BODY = { 244, 168, 174, 255 };   // 粉红
-    const Color NOSE = { 206, 122, 132, 255 };   // 深粉（鼻子）
-    const Color EYE  = { 30, 20, 20, 255 };      // 眼睛
-
+// 生物整体框架：绕 Y 旋转朝向，受伤闪红，走路起伏
+// 回调函数绘制各部件（部件坐标以脚底中心为原点，+Z 为前方）
+static void drawMobBase(const Mob& m, void (*drawParts)(const Mob&, float bob, Color body)) {
     rlPushMatrix();
     rlTranslatef(m.pos.x, m.pos.y, m.pos.z);
     rlRotatef(m.yaw * RAD2DEG, 0, 1, 0);
 
     // 受伤红闪
     bool flash = m.hurtFlash > 0.0f && (int)(m.hurtFlash * 20.0f) % 2 == 0;
-
-    // 走路身体起伏
     float bob = 0.0f;
     if (m.hasTarget) bob = fabsf(sinf(m.bobPhase)) * 0.06f;
 
-    Color body = flash ? (Color){ 255, 110, 110, 255 } : BODY;
-    Color nose = flash ? (Color){ 230, 80, 90, 255 } : NOSE;
+    Color body = flash ? (Color){ 255, 110, 110, 255 } : (Color){ 255, 255, 255, 255 };
+    drawParts(m, bob, body);
 
-    // 身体（长 1.1 沿 Z，中心 y=0.45）
+    rlPopMatrix();
+}
+
+// 红色覆盖：受伤时把部件染红（在 drawParts 内部用 blend 处理）
+static Color hurtBlend(Color base, Color body) {
+    if (body.g < 200) {
+        // 闪红：向红色混合
+        float f = 0.6f;
+        return { (unsigned char)(base.r + (255 - base.r) * f),
+                 (unsigned char)(base.g * (1.0f - f)),
+                 (unsigned char)(base.b * (1.0f - f)), 255 };
+    }
+    return base;
+}
+
+// ---- 猪：身体 + 头 + 鼻子 + 耳朵 + 眼睛 + 4 腿 ----
+static void drawPigParts(const Mob& m, float bob, Color blend) {
+    const Color BODY = { 244, 168, 174, 255 };
+    const Color NOSE = { 206, 122, 132, 255 };
+    const Color EYE  = { 30, 20, 20, 255 };
+    Color body = hurtBlend(BODY, blend);
+    Color nose = hurtBlend(NOSE, blend);
     drawColoredBox({ 0, 0.45f + bob, 0 }, { 0.7f, 0.7f, 1.1f }, body);
-    // 头（身体前端上方）
     drawColoredBox({ 0, 0.75f + bob, 0.68f }, { 0.5f, 0.5f, 0.5f }, body);
-    // 鼻子（头前方）
     drawColoredBox({ 0, 0.72f + bob, 0.98f }, { 0.16f, 0.14f, 0.1f }, nose);
-    // 耳朵（头两侧）
     drawColoredBox({ -0.28f, 0.98f + bob, 0.62f }, { 0.12f, 0.14f, 0.06f }, body);
     drawColoredBox({ 0.28f, 0.98f + bob, 0.62f }, { 0.12f, 0.14f, 0.06f }, body);
-    // 眼睛（头两侧）
     drawColoredBox({ -0.24f, 0.78f + bob, 0.75f }, { 0.05f, 0.05f, 0.03f }, EYE);
     drawColoredBox({ 0.24f, 0.78f + bob, 0.75f }, { 0.05f, 0.05f, 0.03f }, EYE);
-    // 4 条腿（身体四角下方）
     drawColoredBox({ 0.18f, 0.2f, 0.35f }, { 0.25f, 0.4f, 0.25f }, body);
     drawColoredBox({ -0.18f, 0.2f, 0.35f }, { 0.25f, 0.4f, 0.25f }, body);
     drawColoredBox({ 0.18f, 0.2f, -0.35f }, { 0.25f, 0.4f, 0.25f }, body);
     drawColoredBox({ -0.18f, 0.2f, -0.35f }, { 0.25f, 0.4f, 0.25f }, body);
+}
 
-    rlPopMatrix();
+// ---- 牛：身体 + 头 + 角 + 鼻子 + 4 腿 ----
+static void drawCowParts(const Mob& m, float bob, Color blend) {
+    const Color BODY = { 110, 75, 40, 255 };
+    const Color HEAD = { 90, 60, 35, 255 };
+    const Color HORN = { 210, 205, 190, 255 };
+    const Color SNOT = { 150, 95, 60, 255 };
+    const Color EYE  = { 25, 20, 15, 255 };
+    Color body = hurtBlend(BODY, blend);
+    Color head = hurtBlend(HEAD, blend);
+    drawColoredBox({ 0, 0.65f + bob, 0 }, { 0.7f, 0.7f, 1.4f }, body);
+    drawColoredBox({ 0, 0.95f + bob, 0.85f }, { 0.5f, 0.5f, 0.5f }, head);
+    drawColoredBox({ -0.24f, 1.18f + bob, 0.78f }, { 0.08f, 0.08f, 0.2f }, HORN);
+    drawColoredBox({ 0.24f, 1.18f + bob, 0.78f }, { 0.08f, 0.08f, 0.2f }, HORN);
+    drawColoredBox({ 0, 0.92f + bob, 1.12f }, { 0.3f, 0.15f, 0.1f }, SNOT);
+    drawColoredBox({ -0.2f, 1.02f + bob, 0.95f }, { 0.05f, 0.05f, 0.03f }, EYE);
+    drawColoredBox({ 0.2f, 1.02f + bob, 0.95f }, { 0.05f, 0.05f, 0.03f }, EYE);
+    drawColoredBox({ 0.2f, 0.3f, 0.45f }, { 0.25f, 0.6f, 0.25f }, body);
+    drawColoredBox({ -0.2f, 0.3f, 0.45f }, { 0.25f, 0.6f, 0.25f }, body);
+    drawColoredBox({ 0.2f, 0.3f, -0.45f }, { 0.25f, 0.6f, 0.25f }, body);
+    drawColoredBox({ -0.2f, 0.3f, -0.45f }, { 0.25f, 0.6f, 0.25f }, body);
+}
+
+// ---- 羊：白色身体 + 头 + 耳朵 + 4 腿 ----
+static void drawSheepParts(const Mob& m, float bob, Color blend) {
+    const Color BODY = { 225, 225, 220, 255 };
+    const Color FACE = { 195, 180, 170, 255 };
+    const Color EYE  = { 30, 25, 20, 255 };
+    Color body = hurtBlend(BODY, blend);
+    Color face = hurtBlend(FACE, blend);
+    drawColoredBox({ 0, 0.72f + bob, 0 }, { 0.9f, 0.75f, 1.2f }, body);
+    drawColoredBox({ 0, 0.92f + bob, 0.78f }, { 0.45f, 0.45f, 0.45f }, face);
+    drawColoredBox({ -0.26f, 1.02f + bob, 0.7f }, { 0.1f, 0.12f, 0.04f }, face);
+    drawColoredBox({ 0.26f, 1.02f + bob, 0.7f }, { 0.1f, 0.12f, 0.04f }, face);
+    drawColoredBox({ 0, 0.88f + bob, 1.02f }, { 0.2f, 0.12f, 0.08f }, (Color){ 165, 145, 135, 255 });
+    drawColoredBox({ -0.16f, 0.97f + bob, 0.88f }, { 0.05f, 0.05f, 0.03f }, EYE);
+    drawColoredBox({ 0.16f, 0.97f + bob, 0.88f }, { 0.05f, 0.05f, 0.03f }, EYE);
+    drawColoredBox({ 0.3f, 0.3f, 0.42f }, { 0.2f, 0.6f, 0.2f }, body);
+    drawColoredBox({ -0.3f, 0.3f, 0.42f }, { 0.2f, 0.6f, 0.2f }, body);
+    drawColoredBox({ 0.3f, 0.3f, -0.42f }, { 0.2f, 0.6f, 0.2f }, body);
+    drawColoredBox({ -0.3f, 0.3f, -0.42f }, { 0.2f, 0.6f, 0.2f }, body);
+}
+
+// ---- 僵尸：头 + 身体 + 2 臂 + 2 腿（绿皮肤/蓝衬衫/蓝裤）----
+static void drawZombieParts(const Mob& m, float bob, Color blend) {
+    const Color SKIN = { 74, 106, 66, 255 };    // 皮肤绿
+    const Color SHIRT = { 55, 90, 95, 255 };    // 衬衫蓝绿
+    const Color PANTS = { 45, 60, 110, 255 };   // 裤子蓝
+    const Color EYE  = { 20, 20, 20, 255 };
+    Color skin = hurtBlend(SKIN, blend);
+    Color shirt = hurtBlend(SHIRT, blend);
+    Color pants = hurtBlend(PANTS, blend);
+    // 腿
+    drawColoredBox({ -0.13f, 0.3f, 0 }, { 0.22f, 0.6f, 0.22f }, pants);
+    drawColoredBox({ 0.13f, 0.3f, 0 }, { 0.22f, 0.6f, 0.22f }, pants);
+    // 身体
+    drawColoredBox({ 0, 1.0f + bob, 0 }, { 0.5f, 0.7f, 0.28f }, shirt);
+    // 手臂
+    drawColoredBox({ -0.37f, 1.0f + bob, 0 }, { 0.2f, 0.6f, 0.2f }, skin);
+    drawColoredBox({ 0.37f, 1.0f + bob, 0 }, { 0.2f, 0.6f, 0.2f }, skin);
+    // 头 + 眼睛
+    drawColoredBox({ 0, 1.55f + bob, 0 }, { 0.5f, 0.5f, 0.5f }, skin);
+    drawColoredBox({ -0.11f, 1.58f + bob, 0.26f }, { 0.08f, 0.08f, 0.03f }, EYE);
+    drawColoredBox({ 0.11f, 1.58f + bob, 0.26f }, { 0.08f, 0.08f, 0.03f }, EYE);
+}
+
+static void drawMob(const Mob& m) {
+    switch (m.type) {
+        case MOB_PIG:    drawMobBase(m, drawPigParts); break;
+        case MOB_COW:    drawMobBase(m, drawCowParts); break;
+        case MOB_SHEEP:  drawMobBase(m, drawSheepParts); break;
+        case MOB_ZOMBIE: drawMobBase(m, drawZombieParts); break;
+        default: break;
+    }
 }
 
 void mobDraw(const MobWorld& mw) {
     rlSetTexture(0);
     for (const auto& m : mw.mobs) {
         if (m.dead) continue;
-        drawPig(m);
+        drawMob(m);
     }
 }

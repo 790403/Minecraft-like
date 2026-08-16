@@ -69,10 +69,20 @@ enum TexIndex {
     TEX_ITEM_APPLE = 33,
     TEX_ITEM_BREAD,
     TEX_ITEM_RAW_BEEF,
-	    TEX_ITEM_RAW_PORK,
-	    TEX_ITEM_RAW_CHICKEN,
-	    TEX_CHEST_SIDE = 38,
-	    TEX_ITEM_COUNT
+    TEX_ITEM_RAW_PORK,
+    TEX_ITEM_RAW_CHICKEN,
+    TEX_CHEST_SIDE = 38,
+    // ---- 新生物掉落物 ----
+    TEX_ITEM_RAW_MUTTON = 39,
+    TEX_ITEM_WOOL = 40,
+    TEX_ITEM_ROTTEN_FLESH = 41,
+    // ---- 剑 ----
+    TEX_ITEM_WOOD_SWORD = 42,
+    TEX_ITEM_STONE_SWORD,
+    TEX_ITEM_IRON_SWORD,
+    TEX_ITEM_GOLD_SWORD,
+    TEX_ITEM_DIAMOND_SWORD,
+    TEX_ITEM_COUNT
 };
 
 // ===== 图集尺寸 =====

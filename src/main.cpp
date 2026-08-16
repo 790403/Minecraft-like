@@ -28,7 +28,7 @@ int main() {
     unsigned int seed = 20260711u;
     World world;
     worldInit(world, seed, 6);
-    mobInit(world.mobs, 12);   // 生物系统：最多 12 只
+    mobInit(world.mobs, 20, 8);   // 生物系统：被动 20 只 + 僵尸 8 只
 
     Player player;
     playerInit(player, world, 8, 8);
@@ -66,6 +66,8 @@ int main() {
             int giveItems[] = {
                 ITEM_WOOD_PICKAXE, ITEM_STONE_PICKAXE, ITEM_IRON_PICKAXE,
                 ITEM_GOLD_PICKAXE, ITEM_DIAMOND_PICKAXE,
+                ITEM_WOOD_SWORD, ITEM_STONE_SWORD, ITEM_IRON_SWORD,
+                ITEM_GOLD_SWORD, ITEM_DIAMOND_SWORD,
                 ITEM_COAL, ITEM_RAW_IRON, ITEM_RAW_GOLD, ITEM_DIAMOND,
                 ITEM_STICK, ITEM_IRON_INGOT, ITEM_GOLD_INGOT,
                 ITEM_CHEST, ITEM_FURNACE, ITEM_CRAFTING_TABLE,
@@ -197,25 +199,30 @@ int main() {
 	        world.furnaceSys.updateAll(dt);
 
 	        if (!showInventory && !showChest && !showFurnace) {
-	            // ---- 左键攻击生物（点击，徒手 1 伤害）----
-	            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-	                Vector3 fdir = playerForward(player);
-	                // 攻击距离受方块遮挡限制（隔墙打不到）
-	                RaycastHit bh = playerRaycast(player, world);
-	                float maxDist = bh.hit ? Vector3Distance(player.camera.position, bh.point) : REACH;
-	                int mobIdx = mobRaycast(world.mobs, player.camera.position, fdir, maxDist);
-	                if (mobIdx >= 0) {
-	                    mobHurt(world.mobs, world, mobIdx, 1.0f);
-	                    player.miningTimer = 0.0f;
-	                    player.miningTarget = 0;
-	                }
-	            }
+            // ---- 左键攻击生物（点击，伤害由手持武器决定）----
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                Vector3 fdir = playerForward(player);
+                // 攻击距离受方块遮挡限制（隔墙打不到）
+                RaycastHit bh = playerRaycast(player, world);
+                float maxDist = bh.hit ? Vector3Distance(player.camera.position, bh.point) : REACH;
+                int mobIdx = mobRaycast(world.mobs, player.camera.position, fdir, maxDist);
+                if (mobIdx >= 0) {
+                    int sel = player.inventory.selectedItem();
+                    float dmg = isSword(sel) ? (float)getSwordDamage(sel) : 1.0f;
+                    mobHurt(world.mobs, world, mobIdx, dmg);
+                    player.miningTimer = 0.0f;
+                    player.miningTarget = 0;
+                }
+            }
 
-	            playerUpdate(player, world, dt);
-	            worldUpdate(world, player.pos, 1);
-	            dropUpdate(world.drops, dt, world);
-	            mobUpdate(world.mobs, world, player.pos, dt);
-	            worldBuildDirtyMeshes(world, 2);
+            // ---- 生物更新（僵尸夜间追击，返回对玩家的伤害）----
+            bool isNight = getDayLight(dayFraction(gt)) < 0.5f;
+            player.hp -= mobUpdate(world.mobs, world, player.pos, dt, isNight);
+
+            playerUpdate(player, world, dt);
+            worldUpdate(world, player.pos, 1);
+            dropUpdate(world.drops, dt, world);
+            worldBuildDirtyMeshes(world, 2);
 
 		            // 快捷栏
 	            for (int i = 0; i < 8; ++i)
